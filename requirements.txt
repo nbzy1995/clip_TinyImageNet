@@ -1,0 +1,17 @@
+# Core dependencies
+torch>=1.11.0
+torchvision
+numpy
+pandas
+pillow
+scikit-learn
+scipy
+matplotlib
+tqdm
+requests
+pyyaml
+ftfy
+regex
+
+# Optional: WILDS datasets (for some dataset implementations)
+wilds>=2.0.0
