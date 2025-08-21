@@ -19,14 +19,14 @@ def parse_arguments():
     parser.add_argument(
         "--data-location",
         type=str,
-        default=os.path.expanduser('~/data'),
+        default=".",
         help="The root directory for the datasets.",
     )
     parser.add_argument(
         "--model-location",
         type=str,
-        default=os.path.expanduser('~/ssd/checkpoints/soups'),
-        help="Where to download the models.",
+        default=".",
+        help="Where to save model checkpoints.",
     )
     parser.add_argument(
         "--batch-size",
@@ -44,7 +44,7 @@ def parse_arguments():
     parser.add_argument(
         "--epochs",
         type=int,
-        default=8,
+        default=10,
     )
     parser.add_argument(
         "--warmup-length",
@@ -68,7 +68,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--name",
-        default='finetune_cp',
+        default='finetune_clip',
         help='Filename for the checkpoints.'
     )
     parser.add_argument(

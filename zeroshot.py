@@ -10,17 +10,18 @@ from openai_imagenet_template import openai_imagenet_template
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data-location",
         type=str,
-        default=None,
+        default=".",
         help="The root directory for the datasets.",
     )
     parser.add_argument(
         "--model-location",
         type=str,
-        default=os.path.expanduser('~/ssd/checkpoints/soups'),
-        help="Where to download the models.",
+        default=".",
+        help="Where to save model checkpoints.",
     )
     parser.add_argument(
         "--batch-size",

@@ -12,6 +12,8 @@ requests
 pyyaml
 ftfy
 regex
+git+https://github.com/openai/CLIP.git
+timm
 
 # Optional: WILDS datasets (for some dataset implementations)
 wilds>=2.0.0
