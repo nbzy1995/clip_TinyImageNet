@@ -36,9 +36,12 @@ def get_model_from_sd(state_dict, base_model):
     for p in model.parameters():
         p.data = p.data.float()
     model.load_state_dict(state_dict)
-    model = model.cuda()
-    devices = [x for x in range(torch.cuda.device_count())]
-    return torch.nn.DataParallel(model,  device_ids=devices)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model = model.to(device)
+    if device == 'cuda':
+        devices = [x for x in range(torch.cuda.device_count())]
+        return torch.nn.DataParallel(model,  device_ids=devices)
+    return model
 
 def maybe_dictionarize_batch(batch):
     if isinstance(batch, dict):
@@ -54,7 +57,7 @@ def maybe_dictionarize_batch(batch):
 def test_model_on_dataset(model, dataset):
 
     model.eval()
-    device = 'cuda'
+    device = next(model.parameters()).device
     with torch.no_grad():
         top1, correct, n = 0., 0., 0.
         end = time.time()
@@ -67,7 +70,7 @@ def test_model_on_dataset(model, dataset):
 
         for i, batch in enumerate(loader):
             batch = maybe_dictionarize_batch(batch)
-            inputs, labels = batch['images'].cuda(), batch['labels'].cuda()
+            inputs, labels = batch['images'].to(device), batch['labels'].to(device)
             data_time = time.time() - end
             y = labels
             if 'image_paths' in batch:

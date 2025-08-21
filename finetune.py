@@ -8,7 +8,7 @@ import time
 
 from timm.data.transforms_factory import transforms_imagenet_train
 
-from datasets.imagenet import ImageNet98p, ImageNet
+from dataset.tiny_imagenet import TinyImageNet90p, TinyImageNet
 from utils import ModelWrapper, maybe_dictionarize_batch, cosine_lr
 from zeroshot import zeroshot_classifier
 from openai_imagenet_template import openai_imagenet_template
@@ -78,14 +78,14 @@ def parse_arguments():
 
 if __name__ == '__main__':
     args = parse_arguments()
-    DEVICE = 'cuda'
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if args.custom_template:
         template = [lambda x : f"a photo of a {x}."]
     else:
         template = openai_imagenet_template
 
-    base_model, preprocess = clip.load(args.model, 'cuda', jit=False)
+    base_model, preprocess = clip.load(args.model, DEVICE, jit=False)
     # 98p is the 98% of ImageNet train set that we train on -- the other 2% is hodl-out val.
     if args.timm_aug:
         train_preprocess = transforms_imagenet_train(
@@ -95,8 +95,8 @@ if __name__ == '__main__':
             )
     else:
         train_preprocess = preprocess
-    train_dset = ImageNet98p(train_preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
-    test_dset = ImageNet(preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
+    train_dset = TinyImageNet90p(train_preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
+    test_dset = TinyImageNet(preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
     clf = zeroshot_classifier(base_model, train_dset.classnames, template, DEVICE)
     NUM_CLASSES = len(train_dset.classnames)
     feature_dim = base_model.visual.output_dim
@@ -105,9 +105,10 @@ if __name__ == '__main__':
     for p in model.parameters():
         p.data = p.data.float()
 
-    model = model.cuda()
-    devices = [x for x in range(torch.cuda.device_count())]
-    model = torch.nn.DataParallel(model,  device_ids=devices)
+    model = model.to(DEVICE)
+    if DEVICE == 'cuda':
+        devices = [x for x in range(torch.cuda.device_count())]
+        model = torch.nn.DataParallel(model,  device_ids=devices)
 
     model_parameters = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(model_parameters, lr=args.lr, weight_decay=args.wd)
@@ -119,7 +120,8 @@ if __name__ == '__main__':
 
     model_path = os.path.join(args.model_location, f'{args.name}_0.pt')
     print('Saving model to', model_path)
-    torch.save(model.module.state_dict(), model_path)
+    model_state = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
+    torch.save(model_state, model_path)
 
     for epoch in range(args.epochs):
         # Train
@@ -178,5 +180,6 @@ if __name__ == '__main__':
 
         model_path = os.path.join(args.model_location, f'{args.name}_{epoch + 1}.pt')
         print('Saving model to', model_path)
-        torch.save(model.module.state_dict(), model_path)
+        model_state = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
+        torch.save(model_state, model_path)
 

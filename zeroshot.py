@@ -2,10 +2,9 @@ import argparse
 import os
 import torch
 import clip
-import os
 from tqdm import tqdm
 
-import datasets
+from dataset import tiny_imagenet as datasets
 from utils import ModelWrapper, test_model_on_dataset
 from openai_imagenet_template import openai_imagenet_template
 
@@ -14,7 +13,7 @@ def parse_arguments():
     parser.add_argument(
         "--data-location",
         type=str,
-        default=os.path.expanduser('~/data'),
+        default=None,
         help="The root directory for the datasets.",
     )
     parser.add_argument(
@@ -32,8 +31,8 @@ def parse_arguments():
         "--custom-template", action="store_true", default=False,
     )
     parser.add_argument(
-        "--dataset",  default="ImageNet", 
-        help=f"Must be one of {','.join(['ImageNet', 'ImageNetV2', 'ImageNetR', 'ObjectNet', 'ImageNetA'])}"
+        "--dataset",  default="TinyImageNet", 
+        help=f"Must be one of {','.join(['TinyImageNet', 'ImageNet', 'ImageNetV2', 'ImageNetR', 'ObjectNet', 'ImageNetA'])}"
 
     )
     parser.add_argument(
@@ -66,15 +65,15 @@ def zeroshot_classifier(model, classnames, templates, device):
 
 if __name__ == '__main__':
     args = parse_arguments()
-    DEVICE = 'cuda'
-    assert args.dataset in ['ImageNet', 'ImageNetV2', 'ImageNetR', 'ObjectNet', 'ImageNetA']
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+    assert args.dataset in ['TinyImageNet', 'ImageNet', 'ImageNetV2', 'ImageNetR', 'ObjectNet', 'ImageNetA']
 
     if args.custom_template:
         template = [lambda x : f"a photo of a {x}."]
     else:
         template = openai_imagenet_template
 
-    base_model, preprocess = clip.load(args.model, 'cuda', jit=False)
+    base_model, preprocess = clip.load(args.model, DEVICE, jit=False)
     dset = getattr(datasets, args.dataset)(preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
     clf = zeroshot_classifier(base_model, dset.classnames, template, DEVICE)
     NUM_CLASSES = len(dset.classnames)
@@ -84,9 +83,10 @@ if __name__ == '__main__':
     for p in model.parameters():
         p.data = p.data.float()
 
-    model = model.cuda()
-    devices = [x for x in range(torch.cuda.device_count())]
-    model = torch.nn.DataParallel(model,  device_ids=devices)
+    model = model.to(DEVICE)
+    if DEVICE == 'cuda':
+        devices = [x for x in range(torch.cuda.device_count())]
+        model = torch.nn.DataParallel(model,  device_ids=devices)
 
     accuracy = test_model_on_dataset(model, dset)
 
