@@ -6,12 +6,15 @@ import numpy as np
 from .common import ImageFolderWithPaths, SubsetSampler
 
 
-class TinyImageNet:
+class TinyImageNetTrainDataset:
+    """
+        This is the training folder from original TinyImageNet dataset. But we will split into training and val split, using TinyImageNetTrain90p, TinyImageNetTrain10p
+    """
     def __init__(self,
                  preprocess,
                  location=None,
                  batch_size=32,
-                 num_workers=32,
+                 num_workers=2,
                  distributed=False):
         self.preprocess = preprocess
         self.location = location
@@ -19,13 +22,13 @@ class TinyImageNet:
         self.num_workers = num_workers
         self.distributed = distributed
         
-        # Load class names from wnids.txt and words.txt
-        self.classnames = self.get_tiny_imagenet_classnames()
+        # Load class names from wnids.txt. 
+        self.classnames = self.get_tiny_imagenet_train_dir_classnames()
 
         self.populate_train()
         self.populate_test()
     
-    def get_tiny_imagenet_classnames(self):
+    def get_tiny_imagenet_train_dir_classnames(self):
         tiny_imagenet_path = os.path.join(self.location, self.name())
         
         # Read wnids (class IDs)
@@ -40,7 +43,7 @@ class TinyImageNet:
                 if len(parts) == 2:
                     words_dict[parts[0]] = parts[1]
 
-        # Create mapping for TinyImageNet classes
+        # Create mapping for TinyImageNetTrainDataset classes
         classnames = []
         for wnid in wnids:
             if wnid in words_dict:
@@ -51,7 +54,9 @@ class TinyImageNet:
         return classnames
     
     def populate_train(self):
+        # The original train dataset will be split into our train and val splits.
         traindir = os.path.join(self.location, self.name(), 'train')
+        # TODO: check here.
         self.train_dataset = ImageFolderWithPaths(
             traindir,
             transform=self.preprocess,
@@ -69,6 +74,7 @@ class TinyImageNet:
         )
 
     def populate_test(self):
+        # The original validation set is used by us as test split
         self.test_dataset = self.get_test_dataset()
         self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset,
@@ -79,7 +85,6 @@ class TinyImageNet:
         )
 
     def get_test_dataset(self):
-        # Use validation set as test set, need to create proper structure
         return TinyImageNetValDataset(
             os.path.join(self.location, self.name(), 'val'), 
             transform=self.preprocess
@@ -95,7 +100,11 @@ class TinyImageNet:
         return 'tiny-imagenet-200'
 
 
+
 class TinyImageNetValDataset(torch.utils.data.Dataset):
+    """
+        This is the validation folder from original TinyImageNetTrainDataset dataset. But we will use it as a test split.
+    """
     def __init__(self, val_dir, transform=None):
         self.val_dir = val_dir
         self.transform = transform
@@ -140,10 +149,12 @@ class TinyImageNetValDataset(torch.utils.data.Dataset):
         }
 
 
-class TinyImageNet90p(TinyImageNet):
-
+class TinyImageNetTrain90p(TinyImageNetTrainDataset):
+    """
+        This is 90% subset of the original train set, we use as train split.
+    """
     def get_train_sampler(self):
-        idx_file = os.path.join(self.location, 'tiny_imagenet_90_idxs.npy')
+        idx_file = os.path.join(self.location, 'tiny_imagenet_90_idxs.npy') # TODO:  also check this index file
         assert os.path.exists(idx_file)
         with open(idx_file, 'rb') as f:
             idxs = np.load(f)
@@ -154,8 +165,10 @@ class TinyImageNet90p(TinyImageNet):
         return sampler
 
 
-class TinyImageNet10p(TinyImageNet):
-
+class TinyImageNetTrain10p(TinyImageNetTrainDataset):
+    """
+        This is 10% subset of the original train set, we use as val split.
+    """
     def get_train_sampler(self):
         idx_file = os.path.join(self.location, 'tiny_imagenet_90_idxs.npy')
         assert os.path.exists(idx_file)
