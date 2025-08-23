@@ -24,7 +24,7 @@ def load_persistent_indices(data_location):
     return val_indices
 
 
-class TinyImageNetData:
+class TinyImageNet:
     """
     TinyImageNet dataset class for training, validation, and test splits.
     """
@@ -43,6 +43,7 @@ class TinyImageNetData:
         self.wordnet_map = self.get_wordnet_map()
         self.class_to_idx = self.get_class_to_idx_mapping()
         self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
+        self.classnames = [self.wordnet_map[id] for id in self.class_to_idx.keys()]
 
         self.populate_train()
         self.populate_val()
