@@ -1,9 +1,8 @@
 import os
 import torch
-from torch.utils.data import SubsetRandomSampler
 import numpy as np
-
-from .common import ImageFolderWithPaths
+from torch.utils.data import SubsetRandomSampler
+from .common import ImageFolderWithPaths, SubsetSampler
 
 
 def load_persistent_indices(data_location):
@@ -40,22 +39,20 @@ class TinyImageNetData:
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.distributed = distributed
-        
-        self.classname_map = self.get_classname_map()
+
+        self.wordnet_map = self.get_wordnet_map()
+        self.class_to_idx = self.get_class_to_idx_mapping()
+        self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
 
         self.populate_train()
         self.populate_val()
         self.populate_test()
 
-    def get_classname_map(self):
+    def get_wordnet_map(self):
         """
-        Get the word net map, restricted to available classes in dataset. For example, classname_map['n01443537'] gives 'fish'.
+        Get the word net map. From class id to a word. For e.g., 'n01443537' -> 'fish'.
         """
         tiny_imagenet_path = os.path.join(self.location, self.name())
-
-        # Use directories as class names the dataset has
-        train_dir = os.path.join(tiny_imagenet_path, 'train')
-        class_dirs = [d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d)) and d.startswith('n')]
 
         # Read words (the mapping from wnid to names)
         with open(os.path.join(tiny_imagenet_path, 'words.txt'), 'r') as f:
@@ -65,14 +62,25 @@ class TinyImageNetData:
                 if len(parts) == 2:
                     words_dict[parts[0]] = parts[1]
 
-        classname_map = {}
-        for wnid in class_dirs:
-            if wnid in words_dict:
-                classname_map[wnid] = words_dict[wnid]
-            else:
-                raise ValueError(f"Class {wnid} not found in words.txt")
+        return words_dict
 
-        return classname_map
+    def get_class_to_idx_mapping(self):
+        """
+        Get mapping from class IDs (e.g., 'n01443537') to numeric indices.
+        ⚠️ This mapping is UNIQUE among train, val, test splits, across entire experiment lifecycle. 
+        This must be consistent with the mapping used by ImageFolder (alphabetical order).
+        """
+        tiny_imagenet_path = os.path.join(self.location, self.name())
+        train_dir = os.path.join(tiny_imagenet_path, 'train')
+        
+        # Get class directories in alphabetical order (same as ImageFolder)
+        class_dirs = sorted([d for d in os.listdir(train_dir) 
+                           if os.path.isdir(os.path.join(train_dir, d)) and d.startswith('n')])
+        
+        # Create mapping: class_id -> numeric_index
+        class_to_idx = {class_id: idx for idx, class_id in enumerate(class_dirs)}
+        
+        return class_to_idx
 
     def populate_train(self):
         """
@@ -111,7 +119,7 @@ class TinyImageNetData:
         # Get validation split indices (where val_indices is True)
         val_indices = load_persistent_indices(self.location)
         val_indices = np.where(val_indices)[0]
-        self.val_sampler = SubsetRandomSampler(val_indices)
+        self.val_sampler = SubsetSampler(val_indices) # sequential order
         assert self.val_sampler is not None, "Val sampler is None."
 
         self.val_loader = torch.utils.data.DataLoader(
@@ -127,14 +135,15 @@ class TinyImageNetData:
         """
         self.test_dataset = TinyImageNetValFolder(
             os.path.join(self.location, self.name(), 'val'), 
-            transform=self.preprocess
+            transform=self.preprocess,
+            class_to_idx=self.class_to_idx
         )
-        self.test_loader = torch.utils.data.DataLoader(
+        self.test_loader = torch.utils.data.DataLoader( 
             self.test_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
-            sampler=None
+            sampler=None # default using SequentialSampler
         )
 
     def name(self):
@@ -146,9 +155,12 @@ class TinyImageNetValFolder(torch.utils.data.Dataset):
     """
         This is the validation folder from original TinyImageNetTrainDataset dataset. But we will use it as a test split.
     """
-    def __init__(self, val_dir, transform=None):
+    def __init__(self, val_dir, transform=None, class_to_idx=None):
         self.val_dir = val_dir
         self.transform = transform
+        if class_to_idx is None:
+            raise ValueError("class_to_idx must be provided")
+        self.class_to_idx = class_to_idx
         
         # Read validation annotations
         annotations_file = os.path.join(val_dir, 'val_annotations.txt')
@@ -159,10 +171,12 @@ class TinyImageNetValFolder(torch.utils.data.Dataset):
             for line in f:
                 parts = line.strip().split('\t')
                 img_name = parts[0]
-                class_id = parts[1]
-                
+                class_id = parts[1] # e.g. n01440764
+
                 self.image_paths.append(os.path.join(val_dir, 'images', img_name))
-                self.labels.append(class_id)
+                
+                # Convert string class ID to numeric index
+                self.labels.append(self.class_to_idx[class_id])
 
     def __len__(self):
         return len(self.image_paths)
