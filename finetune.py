@@ -8,7 +8,7 @@ import time
 
 from timm.data.transforms_factory import transforms_imagenet_train
 
-from dataset.tiny_imagenet import TinyImageNet90p, TinyImageNet
+from dataset.tiny_imagenet import TinyImageNet
 from utils import ModelWrapper, maybe_dictionarize_batch, cosine_lr
 from zeroshot import zeroshot_classifier
 from openai_imagenet_template import openai_imagenet_template
@@ -86,7 +86,7 @@ if __name__ == '__main__':
         template = openai_imagenet_template
 
     base_model, preprocess = clip.load(args.model, DEVICE, jit=False)
-    # 98p is the 98% of ImageNet train set that we train on -- the other 2% is hodl-out val.
+
     if args.timm_aug:
         train_preprocess = transforms_imagenet_train(
                 img_size=base_model.visual.input_resolution,
@@ -95,10 +95,11 @@ if __name__ == '__main__':
             )
     else:
         train_preprocess = preprocess
-    train_dset = TinyImageNet90p(train_preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
-    test_dset = TinyImageNet(preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
-    clf = zeroshot_classifier(base_model, train_dset.classnames, template, DEVICE)
-    NUM_CLASSES = len(train_dset.classnames)
+    
+    dset = TinyImageNet(eval_preprocess = preprocess, train_preprocess= train_preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
+
+    clf = zeroshot_classifier(base_model, dset.classnames, template, DEVICE)
+    NUM_CLASSES = len(dset.classnames)
     feature_dim = base_model.visual.output_dim
 
     model = ModelWrapper(base_model, feature_dim, NUM_CLASSES, normalize=True, initial_weights=clf)
@@ -113,7 +114,7 @@ if __name__ == '__main__':
     model_parameters = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(model_parameters, lr=args.lr, weight_decay=args.wd)
 
-    num_batches = len(train_dset.train_loader)
+    num_batches = len(dset.train_loader)
     scheduler = cosine_lr(optimizer, args.lr, args.warmup_length, args.epochs * num_batches)
 
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -127,7 +128,7 @@ if __name__ == '__main__':
         # Train
         model.train()
         end = time.time()
-        for i, batch in enumerate(train_dset.train_loader):
+        for i, batch in enumerate(dset.train_loader):
             step = i + epoch * num_batches
             scheduler(step)
             optimizer.zero_grad()
@@ -148,20 +149,19 @@ if __name__ == '__main__':
             end = time.time()
 
             if i % 20 == 0:
-                percent_complete = 100.0 * i / len(train_dset.train_loader)
+                percent_complete = 100.0 * i / len(dset.train_loader)
                 print(
-                    f"Train Epoch: {epoch} [{percent_complete:.0f}% {i}/{len(train_dset.train_loader)}]\t"
+                    f"Train Epoch: {epoch} [{percent_complete:.0f}% {i}/{len(dset.train_loader)}]\t"
                     f"Loss: {loss.item():.6f}\tData (t) {data_time:.3f}\tBatch (t) {batch_time:.3f}", flush=True
                 )
 
         # #Evaluate
-        test_loader = test_dset.test_loader
         model.eval()
         with torch.no_grad():
             print('*'*80)
-            print('Starting eval')
+            print('Starting eval on validation split')
             correct, count = 0.0, 0.0
-            pbar = tqdm(test_loader)
+            pbar = tqdm(dset.val_loader)
             for batch in pbar:
                 batch = maybe_dictionarize_batch(batch)
                 inputs, labels = batch['images'].to(DEVICE), batch['labels'].to(DEVICE)

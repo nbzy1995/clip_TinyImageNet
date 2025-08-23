@@ -54,21 +54,17 @@ def maybe_dictionarize_batch(batch):
         raise ValueError(f'Unexpected number of elements: {len(batch)}')
 
 
-def test_model_on_dataset(model, dataset):
-
+def eval_model_on_dataset(model, dataloader):
+    """
+    Run model prediction on the given dataloader, including dataloader of training set , validation set or test set
+    """
     model.eval()
     device = next(model.parameters()).device
     with torch.no_grad():
         top1, correct, n = 0., 0., 0.
         end = time.time()
-        loader = dataset.test_loader
-        if type(dataset).__name__ == 'ImageNet2p':
-            loader = dataset.train_loader
-            # assert to make sure the imagenet held-out minival logic is consistent across machines.
-            # tested on a few machines but if this fails for you please submit an issue and we will resolve.
-            assert dataset.train_dataset.__getitem__(dataset.sampler.indices[1000])['image_paths'].endswith('n01675722_4108.JPEG')
 
-        for i, batch in enumerate(loader):
+        for i, batch in enumerate(dataloader):
             batch = maybe_dictionarize_batch(batch)
             inputs, labels = batch['images'].to(device), batch['labels'].to(device)
             data_time = time.time() - end
@@ -78,31 +74,19 @@ def test_model_on_dataset(model, dataset):
 
             logits = model(inputs)
 
-            projection_fn = getattr(dataset, 'project_logits', None)
-            if projection_fn is not None:
-                logits = projection_fn(logits, device)
-
-            if hasattr(dataset, 'project_labels'):
-                y = dataset.project_labels(y, device)
             if isinstance(logits, list):
                 logits = logits[0]
 
-
             pred = logits.argmax(dim=1, keepdim=True).to(device)
-            if hasattr(dataset, 'accuracy'):
-                acc1, num_total = dataset.accuracy(logits, y, image_paths, None)
-                correct += acc1
-                n += num_total
-            else:
-                correct += pred.eq(y.view_as(pred)).sum().item()
-                n += y.size(0)
+            correct += pred.eq(y.view_as(pred)).sum().item()
+            n += y.size(0)
 
             batch_time = time.time() - end
             end = time.time()
             if i % 20 == 0:
-                percent_complete = 100.0 * i / len(loader)
+                percent_complete = 100.0 * i / len(dataloader)
                 print(
-                    f"[{percent_complete:.0f}% {i}/{len(loader)}]\t"
+                    f"[{percent_complete:.0f}% {i}/{len(dataloader)}]\t"
                     f"Acc: {100 * (correct/n):.2f}\tData (t) {data_time:.3f}\tBatch (t) {batch_time:.3f}"
                 )
 

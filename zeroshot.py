@@ -5,7 +5,7 @@ import clip
 from tqdm import tqdm
 
 from dataset import tiny_imagenet as datasets
-from utils import ModelWrapper, test_model_on_dataset
+from utils import ModelWrapper, eval_model_on_dataset
 from openai_imagenet_template import openai_imagenet_template
 
 def parse_arguments():
@@ -75,7 +75,7 @@ if __name__ == '__main__':
         template = openai_imagenet_template
 
     base_model, preprocess = clip.load(args.model, DEVICE, jit=False)
-    dset = getattr(datasets, args.dataset)(preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
+    dset = getattr(datasets, args.dataset)(preprocess, preprocess, location=args.data_location, batch_size=args.batch_size, num_workers=args.workers)
     clf = zeroshot_classifier(base_model, dset.classnames, template, DEVICE)
     NUM_CLASSES = len(dset.classnames)
     feature_dim = base_model.visual.output_dim
@@ -89,6 +89,6 @@ if __name__ == '__main__':
         devices = [x for x in range(torch.cuda.device_count())]
         model = torch.nn.DataParallel(model,  device_ids=devices)
 
-    accuracy = test_model_on_dataset(model, dset)
+    accuracy = eval_model_on_dataset(model, dset.test_loader)
 
     print(f'Accuracy is {round(100 * accuracy, 2)}.')

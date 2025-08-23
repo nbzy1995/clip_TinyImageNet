@@ -29,12 +29,14 @@ class TinyImageNet:
     TinyImageNet dataset class for training, validation, and test splits.
     """
     def __init__(self,
-                 preprocess,
+                 train_preprocess,
+                 eval_preprocess,
                  location=None,
                  batch_size=32,
                  num_workers=2,
                  distributed=False):
-        self.preprocess = preprocess
+        self.train_preprocess = train_preprocess
+        self.eval_preprocess = eval_preprocess # for val and test split
         self.location = location
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -92,8 +94,9 @@ class TinyImageNet:
         # ImageFolder loads classes in alphabetical order (deterministic across platforms)
         self.original_train_dataset = ImageFolderWithPaths(
             os.path.join(self.location, self.name(), 'train'),
-            transform=self.preprocess,
+            transform=self.train_preprocess,
             )
+        #TODO: here we should separate train/val as dataset, otherwise the preprocess will be the same...
         
         # Get training split indices (where val_indices is False)
         val_indices = load_persistent_indices(self.location)
@@ -136,7 +139,7 @@ class TinyImageNet:
         """
         self.test_dataset = TinyImageNetValFolder(
             os.path.join(self.location, self.name(), 'val'), 
-            transform=self.preprocess,
+            transform=self.eval_preprocess,
             class_to_idx=self.class_to_idx
         )
         self.test_loader = torch.utils.data.DataLoader( 
